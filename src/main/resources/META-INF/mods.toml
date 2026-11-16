@@ -38,10 +38,14 @@ side = "CLIENT"
 # 只靠构造函数的副作用把 META-INF/jars/*.jar 注册成独立 mod，
 # 外层那个 modId="touchcontroller" 的 mods.toml 在 Forge 1.20.1 上根本不会被读到。
 # 所以运行时真正存在的 id 是 touchcontroller_1_20_1。
+#
+# 版本范围不能写 [0.3.1,)：TC 目前发布的是 0.3.1-alphaNN，
+# 按 Maven 版本语义 alpha 预发布小于正式版，[0.3.1,) 会把 0.3.1-alpha17 判为不满足。
+# 这里取 [0.3,1.0)，既容纳所有 0.3.x 预发布，也不会误配 0.2.x。
 [[dependencies.${mod_id}]]
 modId = "touchcontroller_1_20_1"
 mandatory = true
-versionRange = "[0.3.1,)"
+versionRange = "[0.3,1.0)"
 ordering = "AFTER"
 side = "CLIENT"
 
