@@ -5,13 +5,17 @@ plugins {
     id("java-library")
 }
 
-val modVersion: String by project
-val modGroup: String by project
-val modId: String by project
-val modName: String by project
-val minecraftVersion: String by project
-val forgeVersion: String by project
-val kotlinVersion: String by project
+fun prop(key: String): String =
+    (project.findProperty(key) as String?)
+        ?: error("Missing gradle property: $key")
+
+val modVersion = prop("mod_version")
+val modGroup = prop("mod_group")
+val modId = prop("mod_id")
+val modName = prop("mod_name")
+val minecraftVersion = prop("minecraft_version")
+val forgeVersion = prop("forge_version")
+val kotlinVersion = prop("kotlin_version")
 
 version = "$modVersion+forge-$minecraftVersion"
 group = modGroup
