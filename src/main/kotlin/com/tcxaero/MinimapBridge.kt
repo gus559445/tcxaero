@@ -1,6 +1,5 @@
 package com.tcxaero
 
-import net.minecraft.client.Minecraft
 import org.slf4j.LoggerFactory
 import java.lang.reflect.Field
 
@@ -9,31 +8,26 @@ import java.lang.reflect.Field
  *
  * <h2>为什么不直接画</h2>
  * Xaero 的小地图不是一张贴图：它自己管 FBO、区块贴图缓存、雷达实体、路径点、指南针，
- * 整套渲染在 `xaero.hud.minimap.module.MinimapSession` 的生命周期里。
+ * 整套渲染挂在 `xaero.hud.minimap.module.MinimapSession` 的生命周期里。
  * 在 TouchController 的 Canvas 里重画一份既拿不到这些状态，也会和它自己的 HUD 渲染打架。
  *
  * <h2>所以改成「搬位置」</h2>
- * Xaero 的 HUD 是模块化的，小地图是一个 `HudModule`，位置存在 `ModuleTransform` 里
- * （public 字段 `x` / `y` / `fromRight` / `fromBottom` / `centered`）。
- * 我们不去改它的渲染，而是**每一帧把它的 transform 改成 TouchController 控件所在的位置**。
- * 结果就是：玩家在 TC 编辑器里拖那个控件，Xaero 的小地图跟着走。
+ * Xaero 的 HUD 是模块化的，小地图是一个 `HudModule`，位置存在 `ModuleTransform` 里。
+ * 我们不去改它的渲染，而是每帧把它的 transform 改成 TouchController 控件所在的位置。
  *
- * <h2>坐标语义（来自 Xaero 的 OldSystemCompatibility.convertTransform）</h2>
- * - `fromRight == false`：`x` 是距**左**边的像素
- * - `fromRight == true` ：`x` 是距**右**边的像素（`x = screenWidth - moduleWidth - 右边距`）
- * - `fromBottom == false`：`y` 是距**上**边的像素
- * - `fromBottom == true` ：`y` 是距**下**边的像素
+ * <h2>坐标语义（来自 ModuleSession.getEffectiveX/getEffectiveY）</h2>
+ * - `centered == false && fromRight == false` → 生效值就是 `x` 本身
+ * - `fromBottom == false`                     → 生效值就是 `y` 本身
  *
- * 这里统一换算成「距左边 / 距上边」的绝对像素，`fromRight` / `fromBottom` 一律置 false，
- * 免得两套坐标系来回算错。
+ * 所以只要把 `x` / `y` 写成绝对像素、并把 `centered` / `fromRight` / `fromBottom`
+ * 全部清成 false，就是「距左边 x 像素、距上边 y 像素」。
  */
 object MinimapBridge {
     private val logger = LoggerFactory.getLogger("tcxaero/bridge")
 
-    /** Xaero 小地图模块的注册 ID。 */
+    /** Xaero 小地图模块的注册 id（ResourceLocation 的 path 部分）。 */
     private const val MINIMAP_MODULE_ID = "minimap"
 
-    /** 本次 layout 算出来的目标矩形；由控件每帧写入。 */
     @Volatile
     private var targetX: Int = 0
 
@@ -43,21 +37,18 @@ object MinimapBridge {
     @Volatile
     private var hasTarget: Boolean = false
 
-    /** 记录最近一次是否成功接管，避免每帧刷日志。 */
     @Volatile
     private var lastApplyOk: Boolean = false
 
-    /** 反射缓存：Xaero 的类只在第一次用时查，之后复用。 */
+    /** 诊断用：只打印前几次 layout 的矩形，确认控件真的在布局里。 */
+    @Volatile
+    private var layoutLogCount: Int = 0
+
     private var hudModInstanceField: Field? = null
-    private var moduleManagerGetField: Field? = null
-    private var transformField: Field? = null
     private var xaeroInitTried: Boolean = false
 
     /**
-     * 由 [MinimapWidget.layout] 每帧调用。
-     *
-     * 传入的是 TouchController 算好的控件矩形（GUI 缩放像素），
-     * 直接作为 Xaero 小地图左上角的目标位置。
+     * 由 [MinimapWidget.layout] 每帧调用，传入 TC 算好的控件矩形（GUI 缩放像素）。
      */
     fun onWidgetLayout(
         screenX: Int,
@@ -67,22 +58,23 @@ object MinimapBridge {
         windowWidth: Int,
         windowHeight: Int,
     ) {
-        // 控件被拖出屏幕（TC 允许拖到边缘外）时不做限制，照原样传下去，
-        // 让 Xaero 自己按它的边界逻辑处理，避免两边判断不一致。
         targetX = screenX
         targetY = screenY
         hasTarget = true
 
+        // 前 3 次把完整矩形打出来：如果这里一直是 0，说明控件没被真正排进布局。
+        if (layoutLogCount < 3) {
+            layoutLogCount++
+            logger.info(
+                "控件 layout：rect=({}, {}) size={}x{} window={}x{}",
+                screenX, screenY, width, height, windowWidth, windowHeight,
+            )
+        }
+
         applyToXaero()
     }
 
-    /**
-     * 把目标位置写进 Xaero 的小地图 `ModuleTransform`。
-     *
-     * 全程反射，原因有两个：
-     * 1. Xaero 是闭源模组，直接编译期依赖它的内部类会让本模组在没装 Xaero 时直接崩；
-     * 2. 不同版本的 `HudMod` / `ModuleManager` 字段名可能变，反射失败可以安全降级。
-     */
+    /** 把目标位置写进 Xaero 的小地图 `ModuleTransform`。全程反射，失败安全降级。 */
     private fun applyToXaero() {
         if (!hasTarget) {
             return
@@ -92,21 +84,18 @@ object MinimapBridge {
         if (hudModule == null) {
             if (!lastApplyOk) {
                 logger.debug("未找到 Xaero 小地图模块，跳过位置接管")
-                lastApplyOk = false
             }
             return
         }
 
         runCatching {
             val transform = obtainTransform(hudModule) ?: return
-            // 绝对坐标：距左 / 距上，不使用 fromRight / fromBottom，
-            // 免得 Xaero 再按自己的屏幕宽度换算一次。
             setInt(transform, "x", targetX)
             setInt(transform, "y", targetY)
+            setBoolean(transform, "centered", false)
             setBoolean(transform, "fromRight", false)
             setBoolean(transform, "fromBottom", false)
-            setBoolean(transform, "centered", false)
-            // fromOldSystem 必须清掉：否则 Xaero 会拿旧系统坐标再转一次。
+            // fromOldSystem 必须清掉，否则 Xaero 会拿旧系统坐标再转一次。
             setBoolean(transform, "fromOldSystem", false)
 
             if (!lastApplyOk) {
@@ -126,32 +115,19 @@ object MinimapBridge {
         val hudMod = xaeroHudModInstance() ?: return null
 
         runCatching {
-            val getHud = hudMod.javaClass.methods.firstOrNull {
-                it.name == "getHud" && it.parameterCount == 0
-            } ?: return null
-            val hud = getHud.invoke(hudMod) ?: return null
-
-            val getModuleManager = hud.javaClass.methods.firstOrNull {
-                it.name == "getModuleManager" && it.parameterCount == 0
-            } ?: return null
-            val moduleManager = getModuleManager.invoke(hud) ?: return null
-
-            val getModules = moduleManager.javaClass.methods.firstOrNull {
-                it.name == "getModules" && it.parameterCount == 0
-            } ?: return null
-            val modules = getModules.invoke(moduleManager) as? Iterable<*> ?: return null
+            val hud = invokeNoArg(hudMod, "getHud") ?: return null
+            val moduleManager = invokeNoArg(hud, "getModuleManager") ?: return null
+            val modules = invokeNoArg(moduleManager, "getModules") as? Iterable<*> ?: return null
 
             for (module in modules) {
                 if (module == null) continue
-                val id = runCatching {
-                    module.javaClass.methods.firstOrNull { it.name == "getId" && it.parameterCount == 0 }
-                        ?.invoke(module)
-                }.getOrNull() ?: continue
-                // ResourceLocation 的 toString 是 "namespace:path"
+                val id = invokeNoArg(module, "getId") ?: continue
+                // ResourceLocation.toString() == "namespace:path"
                 if (id.toString().endsWith(":$MINIMAP_MODULE_ID")) {
                     return module
                 }
             }
+            logger.debug("模块列表里没有 {} 结尾的模块", MINIMAP_MODULE_ID)
             return null
         }.onFailure {
             logger.debug("解析 Xaero 模块失败：{}", it.toString())
@@ -161,18 +137,14 @@ object MinimapBridge {
     }
 
     /**
-     * 取到 `ModuleTransform`。
+     * 取 `ModuleTransform`。
      *
-     * 优先用 `getUsedTransform()`（Xaero 实际渲染时读的那个），
-     * 拿不到再退回 `getConfirmedTransform()`。
+     * `getUsedTransform()` 在「有 Screen 打开」时返回 `unconfirmedTransform`（编辑器临时态），
+     * 关掉界面后返回真正的 `transform`——两者都是实对象，直接改字段有效。
      */
     private fun obtainTransform(hudModule: Any): Any? {
-        for (name in listOf("getUsedTransform", "getConfirmedTransform", "getUnconfirmedTransform")) {
-            val result = runCatching {
-                hudModule.javaClass.methods
-                    .firstOrNull { it.name == name && it.parameterCount == 0 }
-                    ?.invoke(hudModule)
-            }.getOrNull()
+        for (name in listOf("getUsedTransform", "getConfirmedTransform")) {
+            val result = invokeNoArg(hudModule, name)
             if (result != null) {
                 return result
             }
@@ -180,11 +152,13 @@ object MinimapBridge {
         return null
     }
 
-    /**
-     * Xaero 的 `HudMod.INSTANCE`（public static 字段）。
-     *
-     * 这个字段在模组构造阶段才赋值，所以第一次调用拿不到是正常的，之后每次都会重试。
-     */
+    private fun invokeNoArg(target: Any, methodName: String): Any? = runCatching {
+        target.javaClass.methods
+            .firstOrNull { it.name == methodName && it.parameterCount == 0 }
+            ?.invoke(target)
+    }.getOrNull()
+
+    /** Xaero 的 `HudMod.INSTANCE`（public static 字段）。 */
     private fun xaeroHudModInstance(): Any? {
         if (!xaeroInitTried) {
             runCatching {
@@ -199,12 +173,10 @@ object MinimapBridge {
     }
 
     private fun setInt(target: Any, fieldName: String, value: Int) {
-        val field = target.javaClass.getField(fieldName)
-        field.setInt(target, value)
+        target.javaClass.getField(fieldName).setInt(target, value)
     }
 
     private fun setBoolean(target: Any, fieldName: String, value: Boolean) {
-        val field = target.javaClass.getField(fieldName)
-        field.setBoolean(target, value)
+        target.javaClass.getField(fieldName).setBoolean(target, value)
     }
 }
