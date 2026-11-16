@@ -3,6 +3,7 @@ plugins {
     id("net.minecraftforge.gradle") version "[6.0,6.2)"
     id("org.jetbrains.kotlin.jvm") version "2.2.0"
     id("java-library")
+    id("org.spongepowered.mixin") version "0.7.+"
 }
 
 fun prop(key: String): String =
@@ -69,6 +70,8 @@ dependencies {
     compileOnly(files("libs/xaerominimap-forge-1.20.1-26.6.0.jar"))
     // KotlinForForge 的语言层：提供 KotlinModLoadingContext（modLoader=kotlinforforge 时的正确事件总线入口）
     compileOnly(files("libs/kfflang-4.12.0.jar"))
+    // SpongePowered Mixin：织入 TC 的 CustomWidget.layout
+    annotationProcessor("org.spongepowered:mixin:0.8.5:processor")
 }
 
 kotlin {
@@ -111,4 +114,19 @@ tasks.named<Jar>("jar") {
         )
     }
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+// Mixin 配置：让 mixin 注解处理器生成 refmap，并把配置写进 jar 的 manifest。
+mixin {
+    add(sourceSets.main.get(), "tcxaero.refmap.json")
+}
+
+tasks.named<Jar>("jar") {
+    manifest {
+        attributes(
+            mapOf(
+                "MixinConfigs" to "tcxaero.mixins.json",
+            )
+        )
+    }
 }

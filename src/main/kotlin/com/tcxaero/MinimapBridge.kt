@@ -6,24 +6,32 @@ import java.lang.reflect.Field
 /**
  * TouchController 控件矩形 → Xaero's Minimap 位置 的桥接。
  *
- * <h2>为什么不直接画</h2>
- * Xaero 的小地图不是一张贴图：它自己管 FBO、区块贴图缓存、雷达实体、路径点、指南针，
- * 整套渲染挂在 `xaero.hud.minimap.module.MinimapSession` 的生命周期里。
- * 在 TouchController 的 Canvas 里重画一份既拿不到这些状态，也会和它自己的 HUD 渲染打架。
+ * <h2>为什么不自己实现一个 ControllerWidget</h2>
+ * 试过了，走不通：TC 的控件存档走 kondor 的 `JControllerWidget`，
+ * 那是个**静态构建**的 sealed 类型表，只登记了
+ * `boat_button` / `custom` / `dpad` / `joystick` 四种。
+ * 自己新写的 `ControllerWidget` 子类不在表里，注册进 registry 后能出现在控件库，
+ * 但一旦保存布局就会被**静默丢弃**
+ * （实测：编辑器里能看到、能拖进去、保存后配置文件里根本没有）。
  *
- * <h2>所以改成「搬位置」</h2>
- * Xaero 的 HUD 是模块化的，小地图是一个 `HudModule`，位置存在 `ModuleTransform` 里。
- * 我们不去改它的渲染，而是每帧把它的 transform 改成 TouchController 控件所在的位置。
+ * <h2>所以改挂到 CustomWidget 上</h2>
+ * 用一个普通的「自定义按钮」控件当载体，靠 [MinimapLayoutMixin] 在它的 `layout()` 里
+ * 把 TC 已经算好的屏幕矩形读出来，交给本对象去改 Xaero 的 `ModuleTransform`。
  *
- * <h2>坐标语义（来自 ModuleSession.getEffectiveX/getEffectiveY）</h2>
- * - `centered == false && fromRight == false` → 生效值就是 `x` 本身
- * - `fromBottom == false`                     → 生效值就是 `y` 本身
- *
- * 所以只要把 `x` / `y` 写成绝对像素、并把 `centered` / `fromRight` / `fromBottom`
- * 全部清成 false，就是「距左边 x 像素、距上边 y 像素」。
+ * 识别方式是控件名：玩家把这个按钮命名成 [MARKER_NAME]，
+ * 它就从普通按钮变成「小地图占位」。这样不需要新类型、不需要改序列化表，
+ * 存档完全走 TC 原生路径。
  */
 object MinimapBridge {
     private val logger = LoggerFactory.getLogger("tcxaero/bridge")
+
+    /**
+     * 触发小地图联动的控件名。
+     *
+     * 玩家在 TC 编辑器里把任意「自定义按钮」重命名成这个名字，
+     * 它就会变成小地图的占位控件。
+     */
+    const val MARKER_NAME = "Xaero 小地图"
 
     /** Xaero 小地图模块的注册 id（ResourceLocation 的 path 部分）。 */
     private const val MINIMAP_MODULE_ID = "minimap"
@@ -40,7 +48,6 @@ object MinimapBridge {
     @Volatile
     private var lastApplyOk: Boolean = false
 
-    /** 诊断用：只打印前几次 layout 的矩形，确认控件真的在布局里。 */
     @Volatile
     private var layoutLogCount: Int = 0
 
@@ -48,27 +55,27 @@ object MinimapBridge {
     private var xaeroInitTried: Boolean = false
 
     /**
-     * 由 [MinimapWidget.layout] 每帧调用，传入 TC 算好的控件矩形（GUI 缩放像素）。
+     * 判断某个控件是不是「小地图占位」控件：只看最终显示名字。
+     */
+    fun isMarker(nameText: String?): Boolean = nameText?.trim() == MARKER_NAME
+
+    /**
+     * 由 mixin 在 `CustomWidget.layout()` 里每帧调用，传入 TC 算好的控件矩形
+     * （GUI 缩放像素，绝对坐标：距左 / 距上）。
      */
     fun onWidgetLayout(
         screenX: Int,
         screenY: Int,
         width: Int,
         height: Int,
-        windowWidth: Int,
-        windowHeight: Int,
     ) {
         targetX = screenX
         targetY = screenY
         hasTarget = true
 
-        // 前 3 次把完整矩形打出来：如果这里一直是 0，说明控件没被真正排进布局。
         if (layoutLogCount < 3) {
             layoutLogCount++
-            logger.info(
-                "控件 layout：rect=({}, {}) size={}x{} window={}x{}",
-                screenX, screenY, width, height, windowWidth, windowHeight,
-            )
+            logger.info("小地图控件 layout：rect=({}, {}) size={}x{}", screenX, screenY, width, height)
         }
 
         applyToXaero()
@@ -82,8 +89,9 @@ object MinimapBridge {
 
         val hudModule = resolveMinimapModule()
         if (hudModule == null) {
-            if (!lastApplyOk) {
-                logger.debug("未找到 Xaero 小地图模块，跳过位置接管")
+            if (lastApplyOk) {
+                logger.warn("Xaero 小地图模块消失了，停止接管")
+                lastApplyOk = false
             }
             return
         }
@@ -122,12 +130,10 @@ object MinimapBridge {
             for (module in modules) {
                 if (module == null) continue
                 val id = invokeNoArg(module, "getId") ?: continue
-                // ResourceLocation.toString() == "namespace:path"
                 if (id.toString().endsWith(":$MINIMAP_MODULE_ID")) {
                     return module
                 }
             }
-            logger.debug("模块列表里没有 {} 结尾的模块", MINIMAP_MODULE_ID)
             return null
         }.onFailure {
             logger.debug("解析 Xaero 模块失败：{}", it.toString())
@@ -139,7 +145,7 @@ object MinimapBridge {
     /**
      * 取 `ModuleTransform`。
      *
-     * `getUsedTransform()` 在「有 Screen 打开」时返回 `unconfirmedTransform`（编辑器临时态），
+     * `getUsedTransform()` 在有 Screen 打开时返回 `unconfirmedTransform`（编辑器临时态），
      * 关掉界面后返回真正的 `transform`——两者都是实对象，直接改字段有效。
      */
     private fun obtainTransform(hudModule: Any): Any? {
