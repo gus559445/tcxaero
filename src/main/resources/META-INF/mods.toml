@@ -1,7 +1,7 @@
 modLoader = "kotlinforforge"
 loaderVersion = "[4,)"
 license = "LGPL-3.0-or-later"
-issueTrackerURL = "https://github.com/gus559445/TouchController-/issues"
+issueTrackerURL = "https://github.com/gus559445/touchcontroller-xaero/issues"
 
 [[mods]]
 modId = "${mod_id}"
@@ -12,21 +12,21 @@ description = '''把 Xaero's Minimap 的小地图接成 TouchController 的一�
 
 [[dependencies.${mod_id}]]
 modId = "forge"
-type = "required"
+mandatory = true
 versionRange = "[47,)"
 ordering = "NONE"
 side = "CLIENT"
 
 [[dependencies.${mod_id}]]
 modId = "minecraft"
-type = "required"
+mandatory = true
 versionRange = "[1.20.1]"
 ordering = "NONE"
 side = "CLIENT"
 
 [[dependencies.${mod_id}]]
 modId = "kotlinforforge"
-type = "required"
+mandatory = true
 versionRange = "[4,)"
 ordering = "NONE"
 side = "CLIENT"
@@ -34,7 +34,7 @@ side = "CLIENT"
 # TouchController 必须在之前加载：控件注册表由它静态初始化建立。
 [[dependencies.${mod_id}]]
 modId = "touchcontroller"
-type = "required"
+mandatory = true
 versionRange = "[0.3.1,)"
 ordering = "AFTER"
 side = "CLIENT"
@@ -42,7 +42,7 @@ side = "CLIENT"
 # Xaero's Minimap 可选：没装也能启动，只是控件不会驱动任何东西。
 [[dependencies.${mod_id}]]
 modId = "xaerominimap"
-type = "optional"
+mandatory = false
 versionRange = "[0,)"
 ordering = "AFTER"
 side = "CLIENT"
