@@ -35,8 +35,7 @@ class MinimapWidget(
      * 控件边长（GUI 缩放像素）。Xaero 小地图实际显示尺寸由它自己的配置决定，
      * 这里只是给 TC 编辑器一个可拖拽 / 可对齐的方块。
      */
-    override val size: IntSize
-        get() = DEFAULT_SIZE
+    override fun size(): IntSize = DEFAULT_SIZE
 
     override fun layout(context: Context) {
         // TC 在调用 layout 之前已经按 align + offset 算好了本控件的矩形，放进 Context。
