@@ -5,26 +5,36 @@ plugins {
     id("java-library")
 }
 
-version = "${project.property("mod_version")}+forge-${project.property("minecraft_version")}"
-group = project.property("mod_group").toString()
+val modVersion: String by project
+val modGroup: String by project
+val modId: String by project
+val modName: String by project
+val minecraftVersion: String by project
+val forgeVersion: String by project
+val kotlinVersion: String by project
+
+version = "$modVersion+forge-$minecraftVersion"
+group = modGroup
 
 base {
-    archivesName = "${project.property("mod_id")}-${project.property("minecraft_version")}-forge"
+    archivesName = "$modId-$minecraftVersion-forge"
 }
 
-java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+java {
+    toolchain.languageVersion.set(JavaLanguageVersion.of(17))
+}
 
 minecraft {
-    mappings channel: "official", version: project.property("minecraft_version").toString()
+    mappings("official", minecraftVersion)
 
     runs {
-        client {
-            workingDirectory project.file("run")
-            property "forge.logging.markers", "REGISTRIES"
-            property "forge.logging.console.level", "debug"
+        create("client") {
+            workingDirectory = project.file("run")
+            property("forge.logging.markers", "REGISTRIES")
+            property("forge.logging.console.level", "debug")
             mods {
                 create("tcxaero") {
-                    source sourceSets.main
+                    source(sourceSets.main.get())
                 }
             }
         }
@@ -34,25 +44,18 @@ minecraft {
 repositories {
     mavenCentral()
     maven {
-        name = "Xaero"
-        url = uri("https://chocolateminecraft.com/maven/")
-    }
-    maven {
         name = "KotlinForForge"
         url = uri("https://thedarkcolour.github.io/KotlinForForge/")
-    }
-    flatDir {
-        dirs = listOf(file("libs"))
     }
 }
 
 dependencies {
-    minecraft("net.minecraftforge:forge:${project.property("minecraft_version")}-${project.property("forge_version")}")
+    minecraft("net.minecraftforge:forge:$minecraftVersion-$forgeVersion")
 
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:${project.property("kotlin_version")}")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion")
 
-    // TouchController 0.3.1 alpha17 (1.20.1 Forge) 与 Xaero's Minimap 以本地 jar 形式提供。
-    // 用 compileOnly + runtimeOnly，不打包进产物。
+    // TouchController 0.3.1 alpha17 (1.20.1 Forge) 与 Xaero's Minimap 以本地 jar 提供，
+    // compileOnly：运行时由这两个模组自己提供，不打进本模组产物。
     compileOnly(files("libs/touchcontroller-common.jar"))
     compileOnly(files("libs/touchcontroller-api.jar"))
     compileOnly(files("libs/touchcontroller-1-20-1-forge.jar"))
@@ -64,9 +67,6 @@ dependencies {
 
 kotlin {
     jvmToolchain(17)
-    compilerOptions {
-        freeCompilerArgs.add("-Xjvm-default=all")
-    }
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -75,12 +75,12 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.named<ProcessResources>("processResources") {
     val props = mapOf(
-        "mod_id" to project.property("mod_id"),
-        "mod_name" to project.property("mod_name"),
-        "mod_version" to project.property("mod_version"),
-        "mod_group" to project.property("mod_group"),
-        "minecraft_version" to project.property("minecraft_version"),
-        "forge_version" to project.property("forge_version"),
+        "mod_id" to modId,
+        "mod_name" to modName,
+        "mod_version" to modVersion,
+        "mod_group" to modGroup,
+        "minecraft_version" to minecraftVersion,
+        "forge_version" to forgeVersion,
     )
     inputs.properties(props)
     filesMatching(listOf("META-INF/mods.toml", "pack.mcmeta")) {
@@ -88,17 +88,18 @@ tasks.named<ProcessResources>("processResources") {
     }
 }
 
-jar {
+tasks.named<Jar>("jar") {
     manifest {
         attributes(
-            "Specification-Title" to project.property("mod_id"),
-            "Specification-Vendor" to "tcxaero",
-            "Specification-Version" to "1",
-            "Implementation-Title" to project.name,
-            "Implementation-Version" to project.version,
-            "Implementation-Vendor" to "tcxaero",
+            mapOf(
+                "Specification-Title" to modId,
+                "Specification-Vendor" to "tcxaero",
+                "Specification-Version" to "1",
+                "Implementation-Title" to project.name,
+                "Implementation-Version" to project.version,
+                "Implementation-Vendor" to "tcxaero",
+            )
         )
     }
-    // 把 kotlin-stdlib 之外的运行时依赖排除；KotlinForForge 环境已提供 stdlib。
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
