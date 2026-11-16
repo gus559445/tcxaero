@@ -29,7 +29,7 @@ minecraft {
 
     runs {
         create("client") {
-            workingDirectory = project.file("run")
+            workingDirectory = project.file("run").absolutePath
             property("forge.logging.markers", "REGISTRIES")
             property("forge.logging.console.level", "debug")
             mods {
