@@ -67,6 +67,8 @@ dependencies {
     compileOnly(files("libs/kondor-core.jar"))
     compileOnly(files("libs/kotlinx-collections-immutable.jar"))
     compileOnly(files("libs/xaerominimap-forge-1.20.1-26.6.0.jar"))
+    // KotlinForForge 的语言层：提供 KotlinModLoadingContext（modLoader=kotlinforforge 时的正确事件总线入口）
+    compileOnly(files("libs/kfflang-4.12.0.jar"))
 }
 
 kotlin {

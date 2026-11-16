@@ -1,11 +1,9 @@
 package com.tcxaero
 
-import net.minecraftforge.common.MinecraftForge
-import net.minecraftforge.eventbus.api.SubscribeEvent
 import net.minecraftforge.fml.common.Mod
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext
 import org.slf4j.LoggerFactory
+import thedarkcolour.kotlinforforge.KotlinModLoadingContext
 
 /**
  * TouchController × Xaero's Minimap 联动。
@@ -13,17 +11,22 @@ import org.slf4j.LoggerFactory
  * <p>目标：把 Xaero 的小地图当成 TouchController 布局里的一个控件，
  * 让玩家在 TC 编辑器里拖位置 / 对齐，小地图就跟着走。</p>
  *
- * <h2>为什么事件要手动注册</h2>
- * 这里不用 `@Mod.EventBusSubscriber` 自动扫描：那个机制要求订阅方法是 **Java static** 方法，
- * 而 Kotlin 的 `object` 里就算加 `@JvmStatic` 也拿不到 Forge 期望的方法签名
- * （实测订阅方法完全不被调用，注册静默失败）。
- * 直接在构造函数里 `addListener` 最稳，行为可预期。
+ * <h2>为什么用 KotlinModLoadingContext 而不是 FMLJavaModLoadingContext</h2>
+ * 本模组的 modLoader 是 `kotlinforforge`，KFF 会把 `ModLoadingContext.get()`
+ * 换成一个 `KotlinModLoadingContext` 子类。这时候再调
+ * `FMLJavaModLoadingContext.get()` 拿到的实际对象是 Kotlin 那个，
+ * 强转成 `FMLJavaModLoadingContext` 会抛 ClassCastException（实测直接把构造器炸掉）。
+ * KFF 提供 `getKEventBus()` 拿同一个 MOD 总线，是这里唯一正确的入口。
+ *
+ * <h2>为什么不用 @Mod.EventBusSubscriber</h2>
+ * 那个机制要求订阅方法是 Java static 方法；Kotlin object 里即使加 `@JvmStatic`
+ * 也拿不到 Forge 期望的签名，订阅方法完全不被调用（实测静默失败）。
+ * 手动 addListener 行为可预期。
  *
  * <h2>为什么注册放在 FMLClientSetupEvent</h2>
  * TC 的控件注册表（`BuiltinWidgets.registry`）由它的静态初始化建立，
- * 必须等 TC 的类加载之后才能往里面塞东西。
- * FMLClientSetupEvent 阶段所有模组构造都已完成，且 TC 自己的初始化也在同一阶段，
- * 用 `enqueueWork` 排到主线程后执行，顺序安全。
+ * 必须等 TC 的类加载之后才能往里面塞东西。这个阶段所有模组构造都已完成，
+ * 用 `enqueueWork` 排到主线程执行，顺序安全。
  */
 @Mod("tcxaero")
 class TcXaeroMod {
@@ -33,8 +36,7 @@ class TcXaeroMod {
     init {
         logger.info("TouchController × Xaero's Minimap 联动加载中…")
 
-        // MOD 总线：生命周期事件（setup）
-        FMLJavaModLoadingContext.get().modEventBus.addListener(this::onClientSetup)
+        KotlinModLoadingContext.get().kEventBus.addListener(this::onClientSetup)
 
         logger.info("事件监听器已注册")
     }
