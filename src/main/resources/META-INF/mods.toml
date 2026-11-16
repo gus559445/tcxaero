@@ -32,8 +32,14 @@ ordering = "NONE"
 side = "CLIENT"
 
 # TouchController 必须在之前加载：控件注册表由它静态初始化建立。
+#
+# 注意 modId 用的是 touchcontroller_1_20_1 而不是 touchcontroller：
+# TC 0.3.1 是 multijar 打包，它的 LegacyModLocator.scanCandidates() 返回空流，
+# 只靠构造函数的副作用把 META-INF/jars/*.jar 注册成独立 mod，
+# 外层那个 modId="touchcontroller" 的 mods.toml 在 Forge 1.20.1 上根本不会被读到。
+# 所以运行时真正存在的 id 是 touchcontroller_1_20_1。
 [[dependencies.${mod_id}]]
-modId = "touchcontroller"
+modId = "touchcontroller_1_20_1"
 mandatory = true
 versionRange = "[0.3.1,)"
 ordering = "AFTER"
