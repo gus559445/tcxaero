@@ -36,7 +36,7 @@ class TcXaeroMod {
     init {
         logger.info("TouchController × Xaero's Minimap 联动加载中…")
 
-        KotlinModLoadingContext.get().kEventBus.addListener(this::onClientSetup)
+        KotlinModLoadingContext.get().getKEventBus().addListener(this::onClientSetup)
 
         logger.info("事件监听器已注册")
     }
