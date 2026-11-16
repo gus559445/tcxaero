@@ -43,11 +43,15 @@ class MinimapWidget(
         val rect = context.screenOffset
         val rectSize = context.size
 
+        val windowSize = context.windowScaledSize
+
         MinimapBridge.onWidgetLayout(
             screenX = rect.x,
             screenY = rect.y,
             width = rectSize.width,
             height = rectSize.height,
+            windowWidth = windowSize.width,
+            windowHeight = windowSize.height,
         )
     }
 
