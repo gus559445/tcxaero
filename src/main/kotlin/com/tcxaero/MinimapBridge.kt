@@ -57,12 +57,14 @@ object MinimapBridge {
     /**
      * 判断某个控件是不是「小地图占位」控件：只看最终显示名字。
      */
+    @JvmStatic
     fun isMarker(nameText: String?): Boolean = nameText?.trim() == MARKER_NAME
 
     /**
      * 由 mixin 在 `CustomWidget.layout()` 里每帧调用，传入 TC 算好的控件矩形
      * （GUI 缩放像素，绝对坐标：距左 / 距上）。
      */
+    @JvmStatic
     fun onWidgetLayout(
         screenX: Int,
         screenY: Int,
