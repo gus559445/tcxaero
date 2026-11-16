@@ -1,7 +1,7 @@
 plugins {
     id("idea")
     id("net.minecraftforge.gradle") version "[6.0,6.2)"
-    id("org.jetbrains.kotlin.jvm") version "2.0.21"
+    id("org.jetbrains.kotlin.jvm") version "2.2.0"
     id("java-library")
 }
 
@@ -71,6 +71,9 @@ dependencies {
 
 kotlin {
     jvmToolchain(17)
+    compilerOptions {
+        optIn.add("kotlin.uuid.ExperimentalUuidApi")
+    }
 }
 
 tasks.withType<JavaCompile>().configureEach {

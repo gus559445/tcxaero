@@ -6,6 +6,7 @@ import top.fifthlight.touchcontroller.common.control.ControllerWidget
 import top.fifthlight.touchcontroller.common.layout.Context
 import top.fifthlight.touchcontroller.common.layout.align.Align
 import top.fifthlight.touchcontroller.common.util.name.TranslatableName
+import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 /**
@@ -19,6 +20,7 @@ import kotlin.uuid.Uuid
  * [MinimapBridge]，由桥接层把 Xaero 的 `ModuleTransform` 改成同一个位置。
  * 于是玩家在 TC 编辑器里拖这个控件 = 拖 Xaero 的小地图本身。
  */
+@OptIn(ExperimentalUuidApi::class)
 class MinimapWidget(
     override val id: Uuid,
     override val name: TranslatableName,
